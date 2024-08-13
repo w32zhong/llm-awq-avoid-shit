@@ -1,4 +1,3 @@
-from lm_eval import evaluator, tasks
 from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig
 import torch
 import argparse
@@ -17,7 +16,6 @@ from awq.quantize.quantizer import (
     pseudo_quantize_model_weight,
     real_quantize_model_weight,
 )
-from awq.utils.lm_eval_adaptor import LMEvalAdaptor
 from awq.utils.utils import simple_dispatch_model
 from datasets import load_dataset
 from torch import nn
@@ -82,10 +80,6 @@ print("Quantization config:", q_config)
 
 
 def build_model_and_enc(model_path):
-    if not os.path.exists(model_path):  # look into ssd
-        raise FileNotFoundError(f"{model_path} not found!")
-    print(f"* Building model {model_path}")
-
     # all hf model
     config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
     if "mpt" in config.__class__.__name__.lower():
@@ -220,64 +214,16 @@ def main():
         print(f"Found existing AWQ results {args.dump_awq}, exit.")
         exit()
 
-    # a hack here to auto set model group
     model, enc = build_model_and_enc(args.model_path)
 
-    if args.tasks is not None:
-        # https://github.com/IST-DASLab/gptq/blob/2d65066eeb06a5c9ff5184d8cebdf33662c67faf/llama.py#L206
-        if args.tasks == "wikitext":
-            testenc = load_dataset("wikitext", "wikitext-2-raw-v1", split="test")
-            testenc = enc("\n\n".join(testenc["text"]), return_tensors="pt")
-            model.seqlen = 2048
-            testenc = testenc.input_ids.to(model.device)
-            nsamples = testenc.numel() // model.seqlen
-            model = model.eval()
-            nlls = []
-            for i in tqdm.tqdm(range(nsamples), desc="evaluating..."):
-                batch = testenc[:, (i * model.seqlen) : ((i + 1) * model.seqlen)].to(
-                    model.device
-                )
-                with torch.no_grad():
-                    lm_logits = model(batch).logits
-                shift_logits = lm_logits[:, :-1, :].contiguous().float()
-                shift_labels = testenc[
-                    :, (i * model.seqlen) : ((i + 1) * model.seqlen)
-                ][:, 1:]
-                loss_fct = nn.CrossEntropyLoss()
-                loss = loss_fct(
-                    shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1)
-                )
-                neg_log_likelihood = loss.float() * model.seqlen
-                nlls.append(neg_log_likelihood)
-
-            ppl = torch.exp(torch.stack(nlls).sum() / (nsamples * model.seqlen))
-            print(ppl.item())
-
-            results = {"ppl": ppl.item()}
-            if args.output_path is not None:
-                os.makedirs(os.path.dirname(args.output_path), exist_ok=True)
-                with open(args.output_path, "w") as f:
-                    json.dump(results, f, indent=2)
-        else:
-            task_names = args.tasks.split(",")
-
-            lm_eval_model = LMEvalAdaptor(args.model_path, model, enc, args.batch_size)
-            results = evaluator.simple_evaluate(
-                model=lm_eval_model,
-                tasks=task_names,
-                batch_size=args.batch_size,
-                no_cache=True,
-                num_fewshot=args.num_fewshot,
-            )
-
-            print(evaluator.make_table(results))
-
-            if args.output_path is not None:
-                os.makedirs(os.path.dirname(args.output_path), exist_ok=True)
-                # otherwise cannot save
-                results["config"]["model"] = args.model_path
-                with open(args.output_path, "w") as f:
-                    json.dump(results, f, indent=2)
+    from transformers import TextStreamer
+    while True:
+        streamer = TextStreamer(enc)
+        prompt = "here is an essay on solar eclipse: "
+        prompt = input("Enter prompt: ")
+        inputs = enc([prompt], return_tensors="pt")
+        inputs.to('cuda')
+        model.generate(**inputs, streamer=streamer, max_new_tokens=300)
 
 
 if __name__ == "__main__":
