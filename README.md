@@ -82,6 +82,16 @@ br gemv_forward_cuda
 run
 ```
 
+To print Tensor shape in GDB, for example, tensor `_kernel`:
+```
+(cuda-gdb) p _kernel.sizes().Length
+$11 = 2
+(cuda-gdb) p _kernel.sizes().Data[0]
+$12 = 768
+(cuda-gdb) p _kernel.sizes().Data[1]
+$13 = 96
+```
+
 ## AWQ Model Zoo
 
 We provide pre-computed AWQ search results for multiple model families, including LLaMA, OPT, Vicuna, and LLaVA. To get the pre-computed AWQ search results, run:
