@@ -124,6 +124,7 @@ class WQLinear(nn.Module):
     def forward(self, x):
         out_shape = x.shape[:-1] + (self.out_features, )
         inputs = x.reshape(-1, x.shape[-1])
+        #print(self.path, inputs.shape)
         if inputs.shape[0] > 8:
             out = awq_inference_engine.gemm_forward_cuda(inputs, self.qweight, self.scales, self.qzeros, self.group_size, self.split_k_iters)
         else:
