@@ -134,6 +134,9 @@ python -m awq.entry --model_path /PATH/TO/OPT/opt-6.7b \
 
 4. Load and evaluate the real quantized model (now you can see smaller gpu memory usage)
 ```bash
+# OPT 125M
+python awq/entry.py --model_path facebook/opt-125m --w_bit 4 --q_group_size 128 --load_awq ./downloads/opt-125m-w4-g128.pt --q_backend real
+# LLaMA-2 7B
 python awq/entry.py --model_path NousResearch/Llama-2-7b-chat-hf --w_bit 4 --q_group_size 128 --load_awq ./downloads/llama-2-7b-chat-w4-g128.pt --q_backend real
 ```
 
