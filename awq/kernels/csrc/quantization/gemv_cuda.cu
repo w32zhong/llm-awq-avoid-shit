@@ -199,6 +199,8 @@ Args:
 Returns:
   out_feats: tensor of shape [B, OC];
 */
+
+// usage: awq_inference_engine.gemv_forward_cuda(inputs, self.qweight, self.scales, self.qzeros, self.group_size)
 torch::Tensor gemv_forward_cuda(
     torch::Tensor _in_feats,
     torch::Tensor _kernel,
