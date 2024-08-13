@@ -68,6 +68,7 @@ pip install -e .
 3. Install efficient W4A16 (4-bit weight, 16-bit activation) CUDA kernel and optimized FP16 kernels (e.g. layernorm, positional encodings).
 ```
 cd awq/kernels
+python setup.py clean --all
 python setup.py install
 # /home/tk/anaconda3/envs/awq/lib/python3.9/site-packages/awq_inference_engine-0.0.0-py3.9-linux-x86_64.egg/{awq_inference_engine.cpython-39-x86_64-linux-gnu.so, awq_inference_engine.py}
 ```
