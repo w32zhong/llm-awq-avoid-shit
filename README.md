@@ -49,9 +49,12 @@ cd llm-awq
 
 2. Install Package
 ```
-conda create -n awq python=3.10 -y
+conda create -n awq python=3.9 -y
 conda activate awq
 pip install --upgrade pip  # enable PEP 660 support
+conda install conda-forge::gcc_linux-64=11
+conda install conda-forge::gxx_linux-64=11
+conda install cuda -c nvidia/label/cuda-12.1
 pip install -e .
 ```
 
@@ -66,6 +69,7 @@ pip install -e .
 ```
 cd awq/kernels
 python setup.py install
+# /home/tk/anaconda3/envs/awq/lib/python3.9/site-packages/awq_inference_engine-0.0.0-py3.9-linux-x86_64.egg/{awq_inference_engine.cpython-39-x86_64-linux-gnu.so, awq_inference_engine.py}
 ```
 
 ## AWQ Model Zoo
