@@ -73,6 +73,15 @@ python setup.py install
 # /home/tk/anaconda3/envs/awq/lib/python3.9/site-packages/awq_inference_engine-0.0.0-py3.9-linux-x86_64.egg/{awq_inference_engine.cpython-39-x86_64-linux-gnu.so, awq_inference_engine.py}
 ```
 
+To build a debug version, patch `awq/kernels/setup.py.patch` and run
+```
+cuda-gdb --args python awq/entry.py --model_path ...
+
+br gemv_forward_cuda
+
+run
+```
+
 ## AWQ Model Zoo
 
 We provide pre-computed AWQ search results for multiple model families, including LLaMA, OPT, Vicuna, and LLaVA. To get the pre-computed AWQ search results, run:
