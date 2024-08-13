@@ -1,0 +1,24 @@
+diff --git a/awq/kernels/setup.py b/awq/kernels/setup.py
+index 88e3095..0c2b50a 100644
+--- a/awq/kernels/setup.py
++++ b/awq/kernels/setup.py
+@@ -4,15 +4,16 @@ from torch.utils.cpp_extension import BuildExtension, CUDAExtension, CppExtensio
+ 
+ extra_compile_args = {
+     "cxx": [
+-        "-g", 
+-        "-O3", 
++        "-g", "-O0",
++        #"-O3", 
+         "-fopenmp", 
+         "-lgomp", 
+         "-std=c++17",
+         "-DENABLE_BF16"
+     ],
+     "nvcc": [
+-        "-O3", 
++        "-g", "-O0",
++        #"-O3", 
+         "-std=c++17",
+         "-DENABLE_BF16",  # TODO
+         "-U__CUDA_NO_HALF_OPERATORS__",
