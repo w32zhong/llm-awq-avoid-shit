@@ -129,6 +129,13 @@ class WQLinear(nn.Module):
             out = awq_inference_engine.gemm_forward_cuda(inputs, self.qweight, self.scales, self.qzeros, self.group_size, self.split_k_iters)
         else:
             out = awq_inference_engine.gemv_forward_cuda(inputs, self.qweight, self.scales, self.qzeros, self.group_size)
+            breakpoint()
+            #out = awq_inference_engine.gemv_forward_cuda_new(inputs, self.qweight, self.scales, self.qzeros,
+            #    inputs.numel() // inputs.shape[-1],
+            #    self.out_features,
+            #    self.in_features,
+            #    self.group_size
+            #)
         out = out + self.bias if self.bias is not None else out
         #print(out)
         #assert 0
