@@ -30,14 +30,23 @@ __global__ void gemv_kernel_g128(
   const float4* _inputs, const uint32_t* weight, const uint32_t* zeros, const half* scaling_factors, half* _outputs, 
   const int IC, const int OC){
 
+    assert(blockDim.x == 32);
+    assert(blockDim.y == 4);
+    assert(blockDim.z == 1);
+    assert(blockIdx.x == 0);
+    assert(blockIdx.y < 192);
+    assert(blockIdx.z == 0);
+    assert(threadIdx.x < 32);
+    assert(threadIdx.y < 4);
+    assert(threadIdx.z == 0);
+    if (blockIdx.y == 191 && threadIdx.x == 31 && threadIdx.y == 3) {
+        printf("case study\n");
+    }
+
     const int group_size = 128;
     float psum = 0;
     const int batch_idx = blockIdx.z;
     const int oc_idx = blockIdx.y * blockDim.y + threadIdx.y; 
-
-    printf("blockDim: %d, %d, %d \n", blockDim.x, blockDim.y, blockDim.z);
-    printf("blockIdx: %d, %d, %d \n", blockIdx.x, blockIdx.y, blockIdx.z);
-    return;
 
     const float4* inputs = _inputs + batch_idx * IC / PACK_FACTOR;
     half* outputs = _outputs + batch_idx * OC;
@@ -110,7 +119,7 @@ int main()
     int num_out_channels = 768;
 
     dim3 num_blocks(1, num_out_channels / 4, num_out_feats);
-    dim3 num_threads(32, 4);
+    dim3 num_threads(32, 4); // blockDim: (32, 4, 1)
     {
       gemv_kernel_g128<<<num_blocks, num_threads>>>(
         in_feats, kernel, zeros, scaling_factors, out_feats,
