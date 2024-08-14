@@ -42,6 +42,16 @@ __global__ void gemv_kernel_g128(
     if (blockIdx.y == 191 && threadIdx.x == 31 && threadIdx.y == 3) {
         printf("case study\n");
     }
+    // cuda-gdb:
+    // cuda device sm warp lane
+    // cuda kernel block thread
+    // cuda block (0, 190, 0) # switch block
+    // cuda thread (30, 2, 0) # switch thread
+    // info cuda threads # show all threads and the currently active thread
+    // info cuda kernels
+    // info cuda blocks
+    // info cuda warps
+    // frame
 
     const int group_size = 128;
     float psum = 0;
