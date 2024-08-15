@@ -31,6 +31,7 @@ parser.add_argument("--output_path", default=None, type=str)
 parser.add_argument("--num_fewshot", type=int, default=0)
 # model config
 parser.add_argument("--parallel", action="store_true", help="enable model parallelism")
+parser.add_argument("--bnb", action="store_true", help="use BnB instead of AWQ")
 # max memory to offload larger models to CPU
 parser.add_argument(
     "--max_memory",
@@ -215,15 +216,15 @@ def main():
         print(f"Found existing AWQ results {args.dump_awq}, exit.")
         exit()
 
-    if True: # AWQ
-        model, enc = build_model_and_enc(args.model_path)
-    else: # bitsandbytes int8()
+    if args.bnb:
         enc = AutoTokenizer.from_pretrained(
             args.model_path, use_fast=False, trust_remote_code=True
         )
         model = AutoModelForCausalLM.from_pretrained(
             args.model_path, trust_remote_code=True, load_in_4bit=True
         )
+    else: # AWQ
+        model, enc = build_model_and_enc(args.model_path)
 
     from transformers import TextStreamer
     while True:
