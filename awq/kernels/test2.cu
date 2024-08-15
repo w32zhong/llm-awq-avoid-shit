@@ -112,15 +112,13 @@ __global__ void gemv_kernel(
     const int kStride = 64;
     const int kElemsPerThread = MEM_ACCESS_SIZE / 4;
     const int kThreadsNumPerTile = kStride / kElemsPerThread;
-    // assert(MEM_ACCESS_SIZE == 128);
 
-    //static constexpr int kShuffleSize = 32;
-    static constexpr int kShuffleBasicTile = 2;
-    static constexpr int kShuffleContinous = 4;
-    static constexpr int kShuffleStrided = 4;
+    const int kShuffleBasicTile = 2;
+    const int kShuffleContinous = 4;
+    const int kShuffleStrided = 4;
 
-    constexpr int Num = NPerBlock * Batch;
-    constexpr int kInterleave = 4;
+    const int Num = NPerBlock * Batch;
+    const int kInterleave = 4;
 
     half local_inputs[kElemsPerThread];
     uint32_t local_qweights[MEM_ACCESS_SIZE / 32];
