@@ -82,6 +82,11 @@ br gemv_forward_cuda
 run
 ```
 
+or execute GDB commands on running:
+```
+cuda-gdb -ex 'br gemv_kernel' -ex 'run' ./a.out
+```
+
 To print Tensor shape in GDB, for example, tensor `_kernel`:
 ```
 (cuda-gdb) p _kernel.sizes().Length
