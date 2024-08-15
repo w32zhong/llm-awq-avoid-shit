@@ -60,50 +60,49 @@ __global__ void gemv_kernel_g128(
 
     const float4* inputs = _inputs + batch_idx * IC / PACK_FACTOR;
     half* outputs = _outputs + batch_idx * OC;
-    const int num_groups_packed = make_divisible(IC / group_size, PACK_FACTOR);
+
     const int weight_w = IC / PACK_FACTOR;
-    // TODO (Haotian): zeros_w is incorrect, after fixing we got misaligned address
     const int zeros_w = make_divisible(IC / group_size, PACK_FACTOR);
-    // consistent with input shape
+    // scaling_factor width
     const int sf_w = make_divisible(IC / group_size, PACK_FACTOR) * PACK_FACTOR;
-    //if(blockIdx.x == 0 && blockIdx.y == 0 && threadIdx.x == 0 && threadIdx.y == 0) printf("%d %d %d %d\n", IC, group_size, PACK_FACTOR, zeros_w);
+
     // tile size: 4 OC x 1024 IC per iter
-    for(int packed_group_idx = 0; packed_group_idx < num_groups_packed; packed_group_idx++){
-      // 1024 numbers in one iteration across warp. Need 1024 / group_size zeros.
-      uint32_t packed_zeros = *(zeros + oc_idx * zeros_w + packed_group_idx);
+    const int num_groups_packed = make_divisible(IC / group_size, PACK_FACTOR);
+    for(int packed_group_idx = 0; packed_group_idx < num_groups_packed; packed_group_idx++) {
+
       uint32_t packed_weights[4];
-      // use float4 to load weights, each thread load 32 int4 numbers (1 x float4)
       *((float4*)(packed_weights)) = *((float4*)(weight + oc_idx * weight_w + packed_group_idx * (WARP_SIZE * 4) + threadIdx.x * 4));
-      // load scaling factors
-      // g128: four threads -> 128 numbers -> 1 group; 1 warp = 8 groups.
+
       float scaling_factor = __half2float(scaling_factors[oc_idx * sf_w + packed_group_idx * 8 + (threadIdx.x / 4)]);
-      float current_zeros = (float)((packed_zeros >> (threadIdx.x / 4 * 4)) & 0xF);
-      int inputs_ptr_delta = packed_group_idx * WARP_SIZE * 4 + threadIdx.x * 4; 
-      const float4* inputs_ptr = inputs + inputs_ptr_delta;
-      // multiply 32 weights with 32 inputs
+
+      uint32_t packed_zeros = *(zeros + oc_idx * zeros_w + packed_group_idx);
+      float current_zeros = (float)((
+        packed_zeros >> (threadIdx.x / 4 * 4) /* 0, 4, 8, ..., 32 */
+        ) & 0xF);
+
+      int inputs_ptr_delta = packed_group_idx * WARP_SIZE * 4 + threadIdx.x * 4; /* 0, 4, 8, ..., (32 * 4 = 128). */
+      const float4* inputs_ptr = inputs + inputs_ptr_delta; /* inputs is of float4, each time load 4 float4! */
+
       #pragma unroll
-      for (int ic_0 = 0; ic_0 < 4; ic_0++){
-        // iterate over different uint32_t packed_weights in this loop
+      for (int ic_0 = 0; ic_0 < 4; ic_0++) {
         uint32_t current_packed_weight = packed_weights[ic_0];
-        half packed_inputs[PACK_FACTOR];
-        // each thread load 8 inputs, starting index is packed_group_idx * 128 * 8 (because each iter loads 128*8)
+        half packed_inputs[PACK_FACTOR]; /* 8 x half = 16 bytes = float4 */
         if (inputs_ptr_delta + ic_0 < IC / PACK_FACTOR) {
-          *((float4*)packed_inputs) = *(inputs_ptr + ic_0);
+          *((float4*)packed_inputs) = *(inputs_ptr + ic_0); /* load 1 out of 4 float4! */
           #pragma unroll
           for (int ic_1 = 0; ic_1 < PACK_FACTOR; ic_1++){
-            // iterate over 8 numbers packed within each uint32_t number
             float current_single_weight_fp = (float)(current_packed_weight & 0xF);
             float dequantized_weight = scaling_factor * (current_single_weight_fp - current_zeros);
-            //if(blockIdx.x == 0 && blockIdx.y == 0 && threadIdx.x == 0 && threadIdx.y == 0 && ic_0 == 0 && ic_1 == 0 && packed_group_idx == 0) printf("%f %f %f %f %X %X\n", dequantized_weight, current_single_weight_fp, scaling_factor, current_zeros, current_packed_weight, packed_zeros);
             psum += dequantized_weight * __half2float(packed_inputs[ic_1]);
-            current_packed_weight = current_packed_weight >> 4;
-          }
-        }
-      }
-    }
+            current_packed_weight = current_packed_weight >> 4; /* shift */
+          } /* end inner inner for */
+        } /* end if guard */
+      } /* end inner for */
+    } /* end outter for */
+
     psum = warp_reduce_sum(psum);
     if (threadIdx.x == 0) {
-     outputs[oc_idx] = __float2half(psum); 
+        outputs[oc_idx] = __float2half(psum); 
     }
 }
 
