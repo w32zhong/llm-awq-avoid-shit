@@ -26,9 +26,10 @@ def calculate_zeros_width(in_features, group_size=128, pack_num=8):
 # added for the new quantization kernel
 def pack_intweight(unpacked_qweight, interleave, kstride):
     # unpacked_qweight: [N, K]
-    N = unpacked_qweight.shape[0]
-    K = unpacked_qweight.shape[1]
+    N = unpacked_qweight.shape[0] # 768
+    K = unpacked_qweight.shape[1] # 768
 
+    # 768 / 4 = 192
     #unpacked_qweight[0] = torch.arange(768)
     #unpacked_qweight[1] = torch.arange(768) + 1000
     #unpacked_qweight[2] = torch.arange(768) + 2000
