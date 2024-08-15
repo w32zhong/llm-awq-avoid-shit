@@ -215,7 +215,7 @@ def main():
         print(f"Found existing AWQ results {args.dump_awq}, exit.")
         exit()
 
-    if False: # AWQ
+    if True: # AWQ
         model, enc = build_model_and_enc(args.model_path)
     else: # bitsandbytes int8()
         enc = AutoTokenizer.from_pretrained(
@@ -230,7 +230,7 @@ def main():
         streamer = TextStreamer(enc)
         prompt = input("Enter prompt: ")
         if len(prompt.strip()) == 0:
-            prompt = "here is an essay on solar eclipse: "
+            prompt = "here is an essay on solar eclipse:"
         inputs = enc([prompt], return_tensors="pt")
         inputs.to('cuda')
         start = time.time()
