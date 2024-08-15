@@ -29,8 +29,14 @@ def pack_intweight(unpacked_qweight, interleave, kstride):
     N = unpacked_qweight.shape[0]
     K = unpacked_qweight.shape[1]
 
+    #unpacked_qweight[0] = torch.arange(768)
+    #unpacked_qweight[1] = torch.arange(768) + 1000
+    #unpacked_qweight[2] = torch.arange(768) + 2000
+    #unpacked_qweight[3] = torch.arange(768) + 3000
+
     # step1 = np.arange(32).reshape(4, 4, 2).transpose(1, 0, 2).reshape(32)
     Packed_Kernel = unpacked_qweight.cpu().numpy().reshape(N, K // 32, 32)
+    save1 = Packed_Kernel
     Packed_Kernel = Packed_Kernel.reshape(N, K // 32, 4, 4, 2).transpose(0, 1, 3, 2, 4)
     Packed_Kernel = Packed_Kernel.reshape(N, K // 32, 32)
     # step1 [ 0,  1,  8,  9, 16, 17, 24, 25,  2,  3, 10, 11, 18, 19, 26, 27,  4,
@@ -40,30 +46,36 @@ def pack_intweight(unpacked_qweight, interleave, kstride):
     Packed_Kernel = Packed_Kernel.reshape(N, K // 32, 4, 8)
     Packed_Kernel = Packed_Kernel.reshape(N, K // 32, 4, 4, 2).transpose(0, 1, 2, 4, 3)
     Packed_Kernel = Packed_Kernel.reshape(N, K)
+    save2 = Packed_Kernel.reshape(N, K // 32, 32)
     # step2 [ 0,  8, 16, 24,  1,  9, 17, 25,  2, 10, 18, 26,  3, 11, 19, 27,  4,
     #        12, 20, 28,  5, 13, 21, 29,  6, 14, 22, 30,  7, 15, 23, 31])
+
+    # save2[0,0] == save1[0,0][[0, 8, 16, 24, 1, 9, 17, 25, ...]]
 
     # interleave = 4, kstride = 64
     Packed_Kernel = Packed_Kernel.reshape(
         N // interleave, interleave, K // kstride, kstride
+        #           192,          4,           12,      64
     )
-    Packed_Kernel = Packed_Kernel.transpose(0, 2, 1, 3)
+    Packed_Kernel = Packed_Kernel.transpose(0, 2, 1, 3) # 192, 12, 4, 64
     Packed_Kernel = Packed_Kernel.reshape(
         N // interleave, K // kstride, kstride, interleave
-    )
+    ) # 192, 12, 64, 4
+    save3 = Packed_Kernel
+    
+    # Packed_Kernel[0,0] == save2[0,0], save2[0,1] ...
+    # p save3[0][0]
+    # p save3[0][1]
+    # ...
 
-    # Packed_Kernel.shape: (1024, 64, 64, 4)
-    # Packed_Kernel.dtype: int32 --> int16
     Packed_Kernel = (
         Packed_Kernel[..., 0]
         | (Packed_Kernel[..., 1] << 4)
         | (Packed_Kernel[..., 2] << 8)
         | (Packed_Kernel[..., 3] << 12)
-    )
-    # Packed_Kernel.shape: (1024, 64, 64)
+    ) # 192, 12, 64
 
-    # reshape to (N // 4, K), FP16 format
-    Packed_Kernel = Packed_Kernel.reshape(N // interleave, K)
+    Packed_Kernel = Packed_Kernel.reshape(N // interleave, K) # 192, 768
     qweight = (
         torch.tensor(Packed_Kernel.astype("int16"))
         .to(unpacked_qweight.device)
