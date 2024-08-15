@@ -110,16 +110,15 @@ __global__ void gemv_kernel(
   const half* inputs, const uint32_t* weight, const half* scales, const half* zeros, half* outputs, 
   const int IC, const int OC) // IC == OC == 768
 {
-    const int kStride = 64;
-    const int kElemsPerThread = MEM_ACCESS_SIZE / 4;
-    const int kThreadsNumPerTile = kStride / kElemsPerThread;
+    const int kStride = 64, kInterleave = 4; /* from pack_intweight() */
+    const int kElemsPerThread = MEM_ACCESS_SIZE / 4; // 128 / 4 = 32
+    const int kThreadsNumPerTile = kStride / kElemsPerThread; // 64 / 32 = 2
 
     const int kShuffleBasicTile = 2;
     const int kShuffleContinous = 4;
     const int kShuffleStrided = 4;
 
-    const int Num = NPerBlock * Batch;
-    const int kInterleave = 4;
+    const int Num = NPerBlock * Batch; // 2 * 1 = 2
 
     half local_inputs[kElemsPerThread];
     uint32_t local_qweights[MEM_ACCESS_SIZE / 32];
@@ -131,6 +130,11 @@ __global__ void gemv_kernel(
     half psum[Num];
     for (int i = 0; i < Num; ++i)
         psum[i] = static_cast<half>(0.f);
+
+    // (cuda-gdb)
+    // info cuda threads
+    // cuda block (55,0,0)
+    // cuda thread (31,0,0)
     
     extern __shared__ uint8_t shmem[];
     float(*out_smem)[Num * kInterleave] = reinterpret_cast<float(*)[Num * kInterleave]>(shmem);
