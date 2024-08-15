@@ -21,6 +21,55 @@ def calculate_zeros_width(in_features, group_size=128, pack_num=8):
     base_width = make_divisible(in_features // group_size, pack_num)
     base_width = make_divisible(base_width, size_multiplier) * size_multiplier
     return base_width
+
+
+# added for the new quantization kernel
+def pack_intweight(unpacked_qweight, interleave, kstride):
+    # unpacked_qweight: [N, K]
+    N = unpacked_qweight.shape[0]
+    K = unpacked_qweight.shape[1]
+
+    # step1 = np.arange(32).reshape(4, 4, 2).transpose(1, 0, 2).reshape(32)
+    Packed_Kernel = unpacked_qweight.cpu().numpy().reshape(N, K // 32, 32)
+    Packed_Kernel = Packed_Kernel.reshape(N, K // 32, 4, 4, 2).transpose(0, 1, 3, 2, 4)
+    Packed_Kernel = Packed_Kernel.reshape(N, K // 32, 32)
+    # step1 [ 0,  1,  8,  9, 16, 17, 24, 25,  2,  3, 10, 11, 18, 19, 26, 27,  4,
+    #         5, 12, 13, 20, 21, 28, 29,  6,  7, 14, 15, 22, 23, 30, 31]
+
+    # step2 = step1.reshape(4, 4, 2).transpose(0, 2, 1).reshape(32)
+    Packed_Kernel = Packed_Kernel.reshape(N, K // 32, 4, 8)
+    Packed_Kernel = Packed_Kernel.reshape(N, K // 32, 4, 4, 2).transpose(0, 1, 2, 4, 3)
+    Packed_Kernel = Packed_Kernel.reshape(N, K)
+    # step2 [ 0,  8, 16, 24,  1,  9, 17, 25,  2, 10, 18, 26,  3, 11, 19, 27,  4,
+    #        12, 20, 28,  5, 13, 21, 29,  6, 14, 22, 30,  7, 15, 23, 31])
+
+    # interleave = 4, kstride = 64
+    Packed_Kernel = Packed_Kernel.reshape(
+        N // interleave, interleave, K // kstride, kstride
+    )
+    Packed_Kernel = Packed_Kernel.transpose(0, 2, 1, 3)
+    Packed_Kernel = Packed_Kernel.reshape(
+        N // interleave, K // kstride, kstride, interleave
+    )
+
+    # Packed_Kernel.shape: (1024, 64, 64, 4)
+    # Packed_Kernel.dtype: int32 --> int16
+    Packed_Kernel = (
+        Packed_Kernel[..., 0]
+        | (Packed_Kernel[..., 1] << 4)
+        | (Packed_Kernel[..., 2] << 8)
+        | (Packed_Kernel[..., 3] << 12)
+    )
+    # Packed_Kernel.shape: (1024, 64, 64)
+
+    # reshape to (N // 4, K), FP16 format
+    Packed_Kernel = Packed_Kernel.reshape(N // interleave, K)
+    qweight = (
+        torch.tensor(Packed_Kernel.astype("int16"))
+        .to(unpacked_qweight.device)
+        .contiguous()
+    )
+    return qweight
     
 
 class ScaledActivation(nn.Module):
@@ -86,6 +135,8 @@ class WQLinear(nn.Module):
         intweight = torch.cat(intweight, dim=1)
         # intweight = intweight.t().contiguous()
         intweight = intweight.to(dtype=torch.int32)
+        awq_linear.intweight = intweight
+
         qweight = torch.zeros((intweight.shape[0], intweight.shape[1] // 32 * awq_linear.w_bit), dtype=torch.int32, device=intweight.device)           
          
         for col in range(intweight.shape[1] // pack_num):
@@ -98,6 +149,10 @@ class WQLinear(nn.Module):
                 qweight_col = intweight[:, col * pack_num + order_map[i]]
                 qweight[:, col] |= qweight_col << (i * awq_linear.w_bit)
         awq_linear.qweight = qweight
+
+        awq_linear.qweight2 = pack_intweight(
+            intweight.contiguous(), interleave=4, kstride=64
+        )
 
         zeros = zeros.to(dtype=torch.int32)
         qzeros = torch.zeros(
@@ -133,22 +188,22 @@ class WQLinear(nn.Module):
         out_shape = x.shape[:-1] + (self.out_features, )
         inputs = x.reshape(-1, x.shape[-1])
         #print(self.path, inputs.shape)
-        if inputs.shape[0] > 8:
+        if inputs.shape[0] >= 8:
             out = awq_inference_engine.gemm_forward_cuda(inputs, self.qweight, self.scales, self.qzeros, self.group_size, self.split_k_iters)
         else:
-            out = awq_inference_engine.gemv_forward_cuda(inputs, self.qweight, self.scales, self.qzeros, self.group_size)
+            #out = awq_inference_engine.gemv_forward_cuda(inputs, self.qweight, self.scales, self.qzeros, self.group_size)
 
-            #inputs = inputs.unsqueeze(0)
-            #qweight = self.qweight.transpose(0, 1)
-            #scales = self.scales.transpose(0, 1)
-            #scaled_zeros = self.scaled_zeros.transpose(0, 1)
-            #out_1 = awq_inference_engine.gemv_forward_cuda_new(
-            #    inputs, qweight, scales, scaled_zeros,
-            #    inputs.numel() // inputs.shape[-1],
-            #    self.out_features,
-            #    self.in_features,
-            #    self.group_size
-            #) # out.shape: [1, 1, 768]
+            inputs = inputs.unsqueeze(0).contiguous()
+            qweight = self.qweight2
+            scales = self.scales.transpose(0, 1).contiguous()
+            scaled_zeros = self.scaled_zeros.transpose(0, 1).contiguous()
+            out = awq_inference_engine.gemv_forward_cuda_new(
+                inputs, qweight, scales, scaled_zeros,
+                inputs.numel() // inputs.shape[-1],
+                self.out_features,
+                self.in_features,
+                self.group_size
+            ) # out.shape: [1, 1, 768]
             #breakpoint()
         out = out + self.bias if self.bias is not None else out
         return out.reshape(out_shape)
