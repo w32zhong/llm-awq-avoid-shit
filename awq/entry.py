@@ -20,6 +20,7 @@ from awq.utils.utils import simple_dispatch_model
 from datasets import load_dataset
 from torch import nn
 import tqdm
+import time
 
 
 parser = argparse.ArgumentParser()
@@ -214,16 +215,30 @@ def main():
         print(f"Found existing AWQ results {args.dump_awq}, exit.")
         exit()
 
-    model, enc = build_model_and_enc(args.model_path)
+    if False: # AWQ
+        model, enc = build_model_and_enc(args.model_path)
+    else: # bitsandbytes int8()
+        enc = AutoTokenizer.from_pretrained(
+            args.model_path, use_fast=False, trust_remote_code=True
+        )
+        model = AutoModelForCausalLM.from_pretrained(
+            args.model_path, trust_remote_code=True, load_in_4bit=True
+        )
 
     from transformers import TextStreamer
     while True:
         streamer = TextStreamer(enc)
-        prompt = "here is an essay on solar eclipse: "
         prompt = input("Enter prompt: ")
+        if len(prompt.strip()) == 0:
+            prompt = "here is an essay on solar eclipse: "
         inputs = enc([prompt], return_tensors="pt")
         inputs.to('cuda')
-        model.generate(**inputs, streamer=streamer, max_new_tokens=300)
+        start = time.time()
+        output = model.generate(**inputs, streamer=streamer, max_new_tokens=300)
+        end = time.time()
+        output_tokens = output.shape[-1] - inputs.input_ids.shape[-1]
+        print('speed:', output_tokens, end-start, output_tokens / (end-start))
+
 
 
 if __name__ == "__main__":
