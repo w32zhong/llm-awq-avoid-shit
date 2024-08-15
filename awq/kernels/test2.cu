@@ -251,6 +251,7 @@ int main()
 
     const uint32_t *kernel = NULL;
     cudaMalloc((void **)&kernel, sizeof(uint16_t) * 192 * 768);
+    //cudaMalloc((void **)&kernel, sizeof(uint32_t) * 96 * 768);
 
     const half *scaling_factors = NULL;
     cudaMalloc((void **)&scaling_factors, sizeof(half) * 8 * 768);
