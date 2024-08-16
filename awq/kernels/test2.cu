@@ -108,7 +108,7 @@ __device__ __forceinline__ static void warp_reduce(half* psum, float (*out_smem)
 template <int NPerBlock, int Batch, int BlockSize, int GroupSize>
 __global__ void gemv_kernel(
   const half* inputs, const uint32_t* weight, const half* scales, const half* zeros, half* outputs, 
-  const int IC, const int OC) // IC == OC == 768
+  const int IC, const int OC) // IC=k, OC=n
 {
     const int kStride = 64, kInterleave = 4; /* from pack_intweight() */
     const int kElemsPerThread = MEM_ACCESS_SIZE / 4; // 128 / 4 = 32
