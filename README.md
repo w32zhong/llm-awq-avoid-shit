@@ -165,6 +165,9 @@ python awq/entry.py --model_path facebook/opt-125m --w_bit 4 --q_group_size 128 
 python awq/entry.py --model_path NousResearch/Llama-2-7b-chat-hf --w_bit 4 --q_group_size 128 --load_awq ./downloads/llama-2-7b-chat-w4-g128.pt --q_backend real
 ```
 
+## Study
+See kernel study at [awq/kernels](awq/kernels) (mainly `test2.*`).
+
 ## Reference
 
 If you find AWQ useful or relevant to your research, please kindly cite our paper:
