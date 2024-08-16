@@ -242,29 +242,28 @@ __global__ void gemv_kernel(
 int main()
 {
     const int m = 1;
-    const int k = 768;
-    const int n = 768;
+    const int n = 768; // out_features
+    const int k = 3072; // in_features
     /* (m, k) @ (k, n) */
-
-    const half *in_feats = NULL;
-    cudaMalloc((void **)&in_feats, sizeof(half) * m * 1 * 768);
-
-    const uint32_t *kernel = NULL;
-    cudaMalloc((void **)&kernel, sizeof(uint16_t) * 192 * 768);
-    //cudaMalloc((void **)&kernel, sizeof(uint32_t) * 96 * 768);
-
-    const half *scaling_factors = NULL;
-    cudaMalloc((void **)&scaling_factors, sizeof(half) * 8 * 768);
-
-    const half *zeros = NULL;
-    cudaMalloc((void **)&zeros, sizeof(half) * 8 * 768);
-
-    half *out_feats = NULL;
-    cudaMalloc((void **)&out_feats, sizeof(half) * 1 * 1 * 768);
 
     static constexpr int N_PER_BLOCK = 2;
     static constexpr int K_INTERLEAVE = 4;
     static constexpr int BLOCK_SIZE = 256;
+
+    const half *in_feats = NULL;
+    cudaMalloc((void **)&in_feats, sizeof(half) * m * 1 * k);
+
+    const uint32_t *kernel = NULL;
+    cudaMalloc((void **)&kernel, sizeof(uint16_t) * (n / K_INTERLEAVE) * k);
+
+    const half *scaling_factors = NULL;
+    cudaMalloc((void **)&scaling_factors, sizeof(half) * (k / 128) * n);
+
+    const half *zeros = NULL;
+    cudaMalloc((void **)&zeros, sizeof(half) * (k / 128) * n);
+
+    half *out_feats = NULL;
+    cudaMalloc((void **)&out_feats, sizeof(half) * m * 1 * n);
 
     dim3 num_blocks(n / N_PER_BLOCK / K_INTERLEAVE);
     dim3 num_threads(BLOCK_SIZE);
