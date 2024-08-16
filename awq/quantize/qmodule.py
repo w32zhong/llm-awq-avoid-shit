@@ -213,9 +213,9 @@ class WQLinear(nn.Module):
             scaled_zeros = self.scaled_zeros.transpose(0, 1).contiguous()
             out = awq_inference_engine.gemv_forward_cuda_new(
                 inputs, qweight, scales, scaled_zeros,
-                inputs.numel() // inputs.shape[-1],
-                self.out_features,
-                self.in_features,
+                inputs.numel() // inputs.shape[-1], # m
+                self.out_features, # n
+                self.in_features, # k
                 self.group_size
             ) # out.shape: [1, 1, 768]
             #breakpoint()
