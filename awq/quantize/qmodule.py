@@ -206,6 +206,7 @@ class WQLinear(nn.Module):
         else:
             #out = awq_inference_engine.gemv_forward_cuda(inputs, self.qweight, self.scales, self.qzeros, self.group_size)
 
+            # Linear(in_features=3072, out_features=768)
             inputs = inputs.unsqueeze(0).contiguous()
             qweight = self.qweight2
             scales = self.scales.transpose(0, 1).contiguous()

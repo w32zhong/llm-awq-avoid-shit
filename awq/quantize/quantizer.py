@@ -137,6 +137,8 @@ def real_quantize_model_weight(
         scale_activations(layer)
 
         for name, module in named_linears.items():
+            #if module.in_features == 768:
+            #    continue
             if init_only:
                 q_linear = WQLinear.from_linear(
                     module, w_bit, q_config['q_group_size'], True)
@@ -155,6 +157,8 @@ def real_quantize_model_weight(
                 set_op_by_name(layer, name, q_linear)
                 torch.cuda.empty_cache()
                 gc.collect()
+                #print(q_linear.path, module)
+                #return
                 
     torch.cuda.empty_cache()
     gc.collect()
