@@ -46,7 +46,7 @@ GroupSize = 128
 WARP_SIZE = 32
 PACK_FACTOR = 8
 MEM_ACCESS_SIZE = 128
-kElemsPerThread = MEM_ACCESS_SIZE // 4
+kElemsPerThread = MEM_ACCESS_SIZE // 4 # 32
 kThreadsNumPerTile = kStride // kElemsPerThread
 
 kShuffleBasicTile = 2
@@ -68,17 +68,25 @@ def get_xy(offset, width):
 
 def gemv_kernel(matrix, blockIdx, threadIdx):
     blk_row_offset = blockIdx * NPerBlock * kInterleave
-    thd_row_offset = (threadIdx // kThreadsNumPerTile) % kInterleave
-    act_k_offset = threadIdx // (kThreadsNumPerTile * kInterleave) * kStride + (threadIdx % kThreadsNumPerTile) * kElemsPerThread
-    group_offset = act_k_offset // GroupSize
     blk_weight_ptr = 8 * (blk_row_offset * IC // PACK_FACTOR)
-    scale_ptr = blk_row_offset + thd_row_offset + group_offset * OC
+
+    act_k_offset = threadIdx // (kThreadsNumPerTile * kInterleave) * kStride + (threadIdx % kThreadsNumPerTile) * kElemsPerThread
     inputs_ptr = act_k_offset
+
+    thd_row_offset = (threadIdx // kThreadsNumPerTile) % kInterleave
+    group_offset = act_k_offset // GroupSize
+    scale_ptr = blk_row_offset + thd_row_offset + group_offset * OC
+
     act_forward_step = BlockSize * kElemsPerThread // kInterleave
     scale_forward_step = act_forward_step // GroupSize * OC
 
-    kkRange = range(threadIdx * kElemsPerThread, IC * kInterleave, BlockSize * kElemsPerThread)
+    kkRange = range(
+        threadIdx * kElemsPerThread, # threadIdx * 32
+        IC * kInterleave,            # maximum 384 * 4
+        BlockSize * kElemsPerThread  # doesn't matter
+    )
     for idx_kk, kk in enumerate(kkRange):
+        # kk is the "pivot indices" of the kernel
         assert idx_kk == 0
         for idx in range(NPerBlock):
             offset = (idx * kInterleave * IC + kk) // PACK_FACTOR
@@ -88,6 +96,7 @@ def gemv_kernel(matrix, blockIdx, threadIdx):
 
             for i in range(MEM_ACCESS_SIZE // 32):
                 print(f'dequantize_s4_to_fp16x2(local_qweights[{i}], half_weight_buffer[{i * PACK_FACTOR}])')
+
             for i in range(kShuffleContinous):
                 for j in range(kShuffleStrided):
                     offset = (i + j * kShuffleContinous) * kShuffleBasicTile
