@@ -40,7 +40,7 @@ Packed_A = pack_matrix(A)
 NPerBlock = 2
 K_INTERLEAVE = 4
 BlockSize = 256
-blockRange = range(n // NPerBlock // K_INTERLEAVE)
+blockRange = range(n // NPerBlock // K_INTERLEAVE) # range(0, 1)
 threadRange = range(BlockSize)
 pr('blockIdx:', blockRange)
 pr('threadIdx:', threadRange)
@@ -70,23 +70,20 @@ def get_xy(offset, width):
     return f'({x}, {y})'
 
 def gemv_kernel(matrix, blockIdx, threadIdx):
-    blk_row_offset = blockIdx * NPerBlock * kInterleave # kernel row#
-    blk_weight_ptr = 8 * (blk_row_offset * IC // PACK_FACTOR) # kernel row ptr
+    blk_row_offset = blockIdx * NPerBlock * kInterleave # 0
+    blk_weight_ptr = 8 * (blk_row_offset * IC // PACK_FACTOR) # 0
 
-    act_k_offset = threadIdx // (kThreadsNumPerTile * kInterleave) * kStride + (threadIdx % kThreadsNumPerTile) * kElemsPerThread
+    act_k_offset = threadIdx // (kThreadsNumPerTile * kInterleave) * kStride + (threadIdx % kThreadsNumPerTile) * kElemsPerThread # kernel col#
     inputs_ptr = act_k_offset
 
     group_offset = act_k_offset // GroupSize
     thd_row_offset = (threadIdx // kThreadsNumPerTile) % kInterleave # 0, 0, 1, 1, 2, 2, 3, 3, 0 ...
     scale_ptr = blk_row_offset + thd_row_offset + group_offset * OC
 
-    act_forward_step = BlockSize * kElemsPerThread // kInterleave
-    scale_forward_step = act_forward_step // GroupSize * OC
-
     kkRange = range(
         threadIdx * kElemsPerThread, # threadIdx * 32
         IC * kInterleave,            # maximum 384 * 4
-        BlockSize * kElemsPerThread  # doesn't matter
+        BlockSize * kElemsPerThread  # doesn't matter here
     )
     for idx_kk, kk in enumerate(kkRange):
         # kk is the "pivot indices" of the kernel
@@ -95,7 +92,7 @@ def gemv_kernel(matrix, blockIdx, threadIdx):
             offset = (idx * kInterleave * IC + kk) // PACK_FACTOR
             pr(f'local_qweights[0:4] = matrix{get_float4(matrix, blk_weight_ptr + 8 * offset)}')
             pr(f'local_scale[{idx}] = scale{get_xy(scale_ptr + idx * kInterleave, OC)}')
-            matrix.flat[blk_weight_ptr + 8 * offset] = -1
+            matrix.flat[blk_weight_ptr + 8 * offset] *= -1
 
             for i in range(MEM_ACCESS_SIZE // 32):
                 pr(f'dequantize_s4_to_fp16x2(local_qweights[{i}], half_weight_buffer[{i * PACK_FACTOR}])')
