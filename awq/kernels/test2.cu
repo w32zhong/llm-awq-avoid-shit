@@ -132,7 +132,7 @@ __global__ void gemv_kernel(
         psum[i] = static_cast<half>(0.f);
 
     // (cuda-gdb)
-    // info cuda threads
+    // info cuda kernels
     // cuda block (55,0,0)
     // cuda thread (31,0,0)
     
@@ -152,98 +152,117 @@ __global__ void gemv_kernel(
     const int act_forward_step = BlockSize * kElemsPerThread / kInterleave;
     const int scale_forward_step = act_forward_step / GroupSize * OC;
 
-    // Main loop iteration, each block completes the outputs for several OCs
     for (int kk = threadIdx.x * kElemsPerThread; kk < IC * kInterleave; kk += BlockSize * kElemsPerThread)
     {
-        // Load qweight, scales and scaled_zeros
         #pragma unroll
         for (int idx = 0; idx < NPerBlock; ++idx)
         {
-            // use float4 to load weights, each thread load 32 int4 numbers (1 x float4, 128 bit)
             *((float4*)(local_qweights)) = 
                 *((float4*)(blk_weight_ptr + (idx * kInterleave * IC + kk)/ PACK_FACTOR));
-            local_scale[idx] = *(scale_ptr + idx * kInterleave);
-            local_scaled_zeros[idx] = *(zeros_ptr + idx * kInterleave);
+            //local_scale[idx] = *(scale_ptr + idx * kInterleave);
+            //local_scaled_zeros[idx] = *(zeros_ptr + idx * kInterleave);
             
-            // Map int4 qweight to fp format 
             #pragma unroll
             for (int i = 0; i < MEM_ACCESS_SIZE / 32; ++i)
             {
-                // Converts 32 bits (8 x int4) to 8 fp16
                 dequantize_s4_to_fp16x2(*reinterpret_cast<half2 *>(local_qweights + i), reinterpret_cast<uint4 *>(half_weight_buffer + i * PACK_FACTOR));
             }
 
-            // Dequantize (apply s/z) and shuffle elements to match the weight packing format
-            #pragma unroll
-            for (int i = 0; i < kShuffleContinous; ++i)
-            {
-                #pragma unroll
-                for (int j = 0; j < kShuffleStrided; ++j)
-                {
-                    half2 w = 
-                        *reinterpret_cast<half2*>(
-                          half_weight_buffer + (i + j * kShuffleContinous)* kShuffleBasicTile
-                        );
-                    w = __hfma2(w, __half2half2(local_scale[idx]), __half2half2(local_scaled_zeros[idx]));
-                    dequantized_weight[((i * kShuffleStrided + j) * kShuffleBasicTile + 0) 
-                          * NPerBlock + idx]
-                        = w.x;
-                    dequantized_weight[((i * kShuffleStrided + j) * kShuffleBasicTile + 1)
-                            * NPerBlock + idx]
-                        = w.y;
-                }
-            }            
+            // #pragma unroll
+            // for (int i = 0; i < kShuffleContinous; ++i)
+            // {
+            //     #pragma unroll
+            //     for (int j = 0; j < kShuffleStrided; ++j)
+            //     {
+            //         half2 w = 
+            //             *reinterpret_cast<half2*>(
+            //               half_weight_buffer + (i + j * kShuffleContinous)* kShuffleBasicTile
+            //             );
+            //         w = __hfma2(w, __half2half2(local_scale[idx]), __half2half2(local_scaled_zeros[idx]));
+            //         dequantized_weight[((i * kShuffleStrided + j) * kShuffleBasicTile + 0) 
+            //               * NPerBlock + idx]
+            //             = w.x;
+            //         dequantized_weight[((i * kShuffleStrided + j) * kShuffleBasicTile + 1)
+            //                 * NPerBlock + idx]
+            //             = w.y;
+            //     }
+            // }            
         }  
-        #pragma unroll
-        for (int batch_idx = 0; batch_idx < Batch; ++batch_idx)
-        {
-            const half* local_inputs_ptr = inputs_ptr + batch_idx * IC;
-            #pragma unroll
-            for (int idx = 0; idx < kElemsPerThread / 8; ++idx)
-            {
-                // load activation, 8 halves (128 bits) / step.
-                *((float4*)(local_inputs + idx * 8)) = *((float4*)(local_inputs_ptr + idx * 8));
-            }
-            // Perform the MACs
-            #pragma unroll
-            for (int x = 0; x < NPerBlock / 2; ++x)
-            {
-                #pragma unroll
-                for (int y = 0; y < kElemsPerThread; ++y)
-                {
-                    *reinterpret_cast<half2*>(psum + batch_idx * NPerBlock + x * 2)
-                        = __hfma2(*reinterpret_cast<half2*>(dequantized_weight + y * NPerBlock + x * 2),
-                            __half2half2(local_inputs[y]),
-                            *reinterpret_cast<half2*>(psum + batch_idx * NPerBlock + x * 2));
-                }
-            }
-        }
-        inputs_ptr += act_forward_step;
-        scale_ptr += scale_forward_step;
-        zeros_ptr += scale_forward_step;
+
+        // #pragma unroll
+        // for (int batch_idx = 0; batch_idx < Batch; ++batch_idx)
+        // {
+        //     const half* local_inputs_ptr = inputs_ptr + batch_idx * IC;
+        //     #pragma unroll
+        //     for (int idx = 0; idx < kElemsPerThread / 8; ++idx)
+        //     {
+        //         // load activation, 8 halves (128 bits) / step.
+        //         *((float4*)(local_inputs + idx * 8)) = *((float4*)(local_inputs_ptr + idx * 8));
+        //     }
+        //     // Perform the MACs
+        //     #pragma unroll
+        //     for (int x = 0; x < NPerBlock / 2; ++x)
+        //     {
+        //         #pragma unroll
+        //         for (int y = 0; y < kElemsPerThread; ++y)
+        //         {
+        //             *reinterpret_cast<half2*>(psum + batch_idx * NPerBlock + x * 2)
+        //                 = __hfma2(*reinterpret_cast<half2*>(dequantized_weight + y * NPerBlock + x * 2),
+        //                     __half2half2(local_inputs[y]),
+        //                     *reinterpret_cast<half2*>(psum + batch_idx * NPerBlock + x * 2));
+        //         }
+        //     }
+        // }
+        // inputs_ptr += act_forward_step;
+        // scale_ptr += scale_forward_step;
+        // zeros_ptr += scale_forward_step;
     }
 
-    warp_reduce<Num, WARP_SIZE>(psum, out_smem);
+    // warp_reduce<Num, WARP_SIZE>(psum, out_smem);
+    // for (int i = threadIdx.x; i < Num * kInterleave; i += BlockSize)
+    // {
+    //     int batch_idx = i / (NPerBlock * kInterleave);
+    //     int oc_idx = i % (NPerBlock * kInterleave);
+    //     float acc = 0.f;
+    //     for (int j = 0; j < BlockSize / WARP_SIZE; ++j)
+    //     {
+    //         acc += out_smem[j][i];
+    //     }
+    //     outputs[batch_idx * OC + blk_row_offset + oc_idx] = static_cast<half>(acc);
+    // }
+}
 
-    // Num * Interleave = batch * NPerBlock * Interleave -> 1 thread_block write back num
-    for (int i = threadIdx.x; i < Num * kInterleave; i += BlockSize)
-    {
-        int batch_idx = i / (NPerBlock * kInterleave);
-        int oc_idx = i % (NPerBlock * kInterleave);
-        float acc = 0.f;
-        for (int j = 0; j < BlockSize / WARP_SIZE; ++j)
-        {
-            acc += out_smem[j][i];
+void fill_kernel(uint16_t *kernel, const int n)
+{
+    FILE *fh = fopen("test2.json", "r");
+    uint16_t x;
+    int cnt = 0, res = 1;
+    while (1) {
+        res = fscanf(fh, "%hu,", &x);
+        if (res <= 0) break;
+
+        if (cnt % 4 == 0) {
+            kernel[cnt / 4] = x;
         }
-        outputs[batch_idx * OC + blk_row_offset + oc_idx] = static_cast<half>(acc);
+        //kernel[cnt / 4] |= (
+        //    x << (4 * (cnt % 4))
+        //);
+        cnt ++;
     }
+    // printf("fill_kernel: %d numel.\n", cnt);
+    // for (int i = 0; i < n/4; i++) {
+    //     for (int j = 0; j < 10; j++) {
+    //         printf("%hu \t", h_kernel[i * k + j]);
+    //     }
+    //     printf("\n");
+    // }
 }
 
 int main()
 {
     const int m = 1;
-    const int n = 768; // out_features
-    const int k = 3072; // in_features
+    const int n = 8; // 768; // out_features
+    const int k = 384; // 3072; // in_features
     /* (m, k) @ (k, n) */
 
     static constexpr int N_PER_BLOCK = 2;
@@ -253,8 +272,14 @@ int main()
     const half *in_feats = NULL;
     cudaMalloc((void **)&in_feats, sizeof(half) * m * 1 * k);
 
-    const uint32_t *kernel = NULL;
+    size_t kernel_size = sizeof(uint16_t) * (n / K_INTERLEAVE) * k;
+    uint16_t *h_kernel = (uint16_t*)malloc(kernel_size);
+    fill_kernel(h_kernel, n);
+
+    uint32_t *kernel = NULL;
     cudaMalloc((void **)&kernel, sizeof(uint16_t) * (n / K_INTERLEAVE) * k);
+    cudaMemcpy(kernel, h_kernel, kernel_size, cudaMemcpyHostToDevice);
+    free(h_kernel);
 
     const half *scaling_factors = NULL;
     cudaMalloc((void **)&scaling_factors, sizeof(half) * (k / 128) * n);
