@@ -96,6 +96,10 @@ def gemv_kernel(matrix, blockIdx, threadIdx):
 
             for i in range(MEM_ACCESS_SIZE // 32):
                 pr(f'dequantize_s4_to_fp16x2(local_qweights[{i}], half_weight_buffer[{i * PACK_FACTOR}])')
+            # For
+            # [40002 40010 40018 40026]
+            # [40003 40011 40019 40027]
+            # half_weight_buffer[8:16] = 40002 40003 40010 40011 40018 40019 40026 40027
 
             for i in range(kShuffleContinous):
                 for j in range(kShuffleStrided):
