@@ -104,6 +104,12 @@ __device__ __forceinline__ static void warp_reduce(half* psum, float (*out_smem)
       __syncthreads();
 };
 
+__device__ void decode32(uint32_t x, const char *end)
+{
+    printf("%hu ", (x >> 0) & 0xffff);
+    printf("%hu%s", (x >> 16) & 0xffff, end);
+}
+
 /* template: <2, 1, 256, 128> kernel: GridDim=(96,1,1), BlockDim=(256,1,1)*/
 template <int NPerBlock, int Batch, int BlockSize, int GroupSize>
 __global__ void gemv_kernel(
@@ -159,80 +165,89 @@ __global__ void gemv_kernel(
         {
             *((float4*)(local_qweights)) = 
                 *((float4*)(blk_weight_ptr + (idx * kInterleave * IC + kk)/ PACK_FACTOR));
-            //local_scale[idx] = *(scale_ptr + idx * kInterleave);
-            //local_scaled_zeros[idx] = *(zeros_ptr + idx * kInterleave);
+            local_scale[idx] = *(scale_ptr + idx * kInterleave);
+            local_scaled_zeros[idx] = *(zeros_ptr + idx * kInterleave);
             
             #pragma unroll
             for (int i = 0; i < MEM_ACCESS_SIZE / 32; ++i)
             {
                 dequantize_s4_to_fp16x2(*reinterpret_cast<half2 *>(local_qweights + i), reinterpret_cast<uint4 *>(half_weight_buffer + i * PACK_FACTOR));
+
+                if (threadIdx.x == 0) {
+                    printf("<i = %d> ", i);
+                    decode32(local_qweights[i], ": ");
+                    for (int j = 0; j < PACK_FACTOR; j++) {
+                        printf("%f ", __half2float(half_weight_buffer[i * PACK_FACTOR + j]));
+                    }
+                    printf("\n");
+                }
             }
 
-            // #pragma unroll
-            // for (int i = 0; i < kShuffleContinous; ++i)
-            // {
-            //     #pragma unroll
-            //     for (int j = 0; j < kShuffleStrided; ++j)
-            //     {
-            //         half2 w = 
-            //             *reinterpret_cast<half2*>(
-            //               half_weight_buffer + (i + j * kShuffleContinous)* kShuffleBasicTile
-            //             );
-            //         w = __hfma2(w, __half2half2(local_scale[idx]), __half2half2(local_scaled_zeros[idx]));
-            //         dequantized_weight[((i * kShuffleStrided + j) * kShuffleBasicTile + 0) 
-            //               * NPerBlock + idx]
-            //             = w.x;
-            //         dequantized_weight[((i * kShuffleStrided + j) * kShuffleBasicTile + 1)
-            //                 * NPerBlock + idx]
-            //             = w.y;
-            //     }
-            // }            
+            #pragma unroll
+            for (int i = 0; i < kShuffleContinous; ++i)
+            {
+                #pragma unroll
+                for (int j = 0; j < kShuffleStrided; ++j)
+                {
+                    half2 w = 
+                        *reinterpret_cast<half2*>(
+                          half_weight_buffer + (i + j * kShuffleContinous)* kShuffleBasicTile
+                        );
+                    w = __hfma2(w, __half2half2(local_scale[idx]), __half2half2(local_scaled_zeros[idx]));
+                    dequantized_weight[((i * kShuffleStrided + j) * kShuffleBasicTile + 0) 
+                          * NPerBlock + idx]
+                        = w.x;
+                    dequantized_weight[((i * kShuffleStrided + j) * kShuffleBasicTile + 1)
+                            * NPerBlock + idx]
+                        = w.y;
+                }
+            }            
         }  
 
-        // #pragma unroll
-        // for (int batch_idx = 0; batch_idx < Batch; ++batch_idx)
-        // {
-        //     const half* local_inputs_ptr = inputs_ptr + batch_idx * IC;
-        //     #pragma unroll
-        //     for (int idx = 0; idx < kElemsPerThread / 8; ++idx)
-        //     {
-        //         // load activation, 8 halves (128 bits) / step.
-        //         *((float4*)(local_inputs + idx * 8)) = *((float4*)(local_inputs_ptr + idx * 8));
-        //     }
-        //     // Perform the MACs
-        //     #pragma unroll
-        //     for (int x = 0; x < NPerBlock / 2; ++x)
-        //     {
-        //         #pragma unroll
-        //         for (int y = 0; y < kElemsPerThread; ++y)
-        //         {
-        //             *reinterpret_cast<half2*>(psum + batch_idx * NPerBlock + x * 2)
-        //                 = __hfma2(*reinterpret_cast<half2*>(dequantized_weight + y * NPerBlock + x * 2),
-        //                     __half2half2(local_inputs[y]),
-        //                     *reinterpret_cast<half2*>(psum + batch_idx * NPerBlock + x * 2));
-        //         }
-        //     }
-        // }
-        // inputs_ptr += act_forward_step;
-        // scale_ptr += scale_forward_step;
-        // zeros_ptr += scale_forward_step;
+        #pragma unroll
+        for (int batch_idx = 0; batch_idx < Batch; ++batch_idx)
+        {
+            const half* local_inputs_ptr = inputs_ptr + batch_idx * IC;
+            #pragma unroll
+            for (int idx = 0; idx < kElemsPerThread / 8; ++idx)
+            {
+                // load activation, 8 halves (128 bits) / step.
+                *((float4*)(local_inputs + idx * 8)) = *((float4*)(local_inputs_ptr + idx * 8));
+            }
+            // Perform the MACs
+            #pragma unroll
+            for (int x = 0; x < NPerBlock / 2; ++x)
+            {
+                #pragma unroll
+                for (int y = 0; y < kElemsPerThread; ++y)
+                {
+                    *reinterpret_cast<half2*>(psum + batch_idx * NPerBlock + x * 2)
+                        = __hfma2(*reinterpret_cast<half2*>(dequantized_weight + y * NPerBlock + x * 2),
+                            __half2half2(local_inputs[y]),
+                            *reinterpret_cast<half2*>(psum + batch_idx * NPerBlock + x * 2));
+                }
+            }
+        }
+        inputs_ptr += act_forward_step;
+        scale_ptr += scale_forward_step;
+        zeros_ptr += scale_forward_step;
     }
 
-    // warp_reduce<Num, WARP_SIZE>(psum, out_smem);
-    // for (int i = threadIdx.x; i < Num * kInterleave; i += BlockSize)
-    // {
-    //     int batch_idx = i / (NPerBlock * kInterleave);
-    //     int oc_idx = i % (NPerBlock * kInterleave);
-    //     float acc = 0.f;
-    //     for (int j = 0; j < BlockSize / WARP_SIZE; ++j)
-    //     {
-    //         acc += out_smem[j][i];
-    //     }
-    //     outputs[batch_idx * OC + blk_row_offset + oc_idx] = static_cast<half>(acc);
-    // }
+    warp_reduce<Num, WARP_SIZE>(psum, out_smem);
+    for (int i = threadIdx.x; i < Num * kInterleave; i += BlockSize)
+    {
+        int batch_idx = i / (NPerBlock * kInterleave);
+        int oc_idx = i % (NPerBlock * kInterleave);
+        float acc = 0.f;
+        for (int j = 0; j < BlockSize / WARP_SIZE; ++j)
+        {
+            acc += out_smem[j][i];
+        }
+        outputs[batch_idx * OC + blk_row_offset + oc_idx] = static_cast<half>(acc);
+    }
 }
 
-void fill_kernel(uint16_t *kernel, const int n)
+void fill_kernel(uint16_t *kernel, const int n, const int k)
 {
     FILE *fh = fopen("test2.json", "r");
     uint16_t x;
@@ -249,13 +264,14 @@ void fill_kernel(uint16_t *kernel, const int n)
         //);
         cnt ++;
     }
-    // printf("fill_kernel: %d numel.\n", cnt);
-    // for (int i = 0; i < n/4; i++) {
-    //     for (int j = 0; j < 10; j++) {
-    //         printf("%hu \t", h_kernel[i * k + j]);
-    //     }
-    //     printf("\n");
-    // }
+
+    printf("fill_kernel: %d numel.\n", cnt);
+    for (int i = 0; i < n/4; i++) {
+        for (int j = 0; j < 10; j++) {
+            printf("%hu \t", kernel[i * k + j]);
+        }
+        printf("\n");
+    }
 }
 
 int main()
@@ -274,12 +290,11 @@ int main()
 
     size_t kernel_size = sizeof(uint16_t) * (n / K_INTERLEAVE) * k;
     uint16_t *h_kernel = (uint16_t*)malloc(kernel_size);
-    fill_kernel(h_kernel, n);
+    fill_kernel(h_kernel, n, k);
 
     uint32_t *kernel = NULL;
     cudaMalloc((void **)&kernel, sizeof(uint16_t) * (n / K_INTERLEAVE) * k);
     cudaMemcpy(kernel, h_kernel, kernel_size, cudaMemcpyHostToDevice);
-    free(h_kernel);
 
     const half *scaling_factors = NULL;
     cudaMalloc((void **)&scaling_factors, sizeof(half) * (k / 128) * n);
@@ -298,6 +313,7 @@ int main()
         );
     }
 
+    free(h_kernel);
     cudaFree((void*)in_feats);
     cudaFree((void*)kernel);
     cudaFree((void*)zeros);
