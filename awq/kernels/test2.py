@@ -24,8 +24,7 @@ def pack_matrix(unpacked_qweight, interleave=kInterleave, kstride=kStride):
     return Packed_Kernel.reshape(N // interleave, K, interleave)
 
 def pr(*args):
-    pass
-    #print(*args)
+    print(*args)
 
 import numpy as np
 Batch = 1
