@@ -127,7 +127,7 @@ __global__ void gemv_kernel(
     const int Num = NPerBlock * Batch; // 2 * 1 = 2
 
     half local_inputs[kElemsPerThread];
-    uint32_t local_qweights[MEM_ACCESS_SIZE / 32];
+    uint32_t local_qweights[MEM_ACCESS_SIZE / 32]; // 128 / 32 = 4 x float
     half half_weight_buffer[kElemsPerThread]; 
     half dequantized_weight[kElemsPerThread * NPerBlock];
     half local_scale[NPerBlock];
