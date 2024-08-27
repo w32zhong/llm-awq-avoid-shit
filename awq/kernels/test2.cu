@@ -16,6 +16,11 @@ __inline__ __device__ void dequantize_s4_to_fp16x2(half2 const &source, uint4 *r
     static constexpr uint32_t BOTTOM_MASK = 0x000f000f; // two low 4 bits
     static constexpr uint32_t TOP_MASK = 0x00f000f0; // two high 4 bits
     static constexpr uint32_t I4s_TO_F16s_MAGIC_NUM = 0x64006400; // 0x6400 = b0110 0100 0000 0000
+    // because fp16 format is (sign 1 bit) (exp 5 bits) (fraction 10 bits)
+    // See https://evanw.github.io/float-toy/
+    //
+    // For any integer 0 ≤ Y < 1024, we can construct the FP16 representation of Y + 1024 by setting the exponent to 1024 and storing Y in the FP16 mantissa. This is easily done by performing 0x6400 | Y , since 0x6400 is the hex representation of 1024 in FP16.
+    // -- Who Says Elephants Can’t Run: Bringing Large Scale MoE Models into Cloud Scale Production -- Young Jin Kim
 
     const uint32_t top_i4s = i4s >> 8;
     // Extract elt_01 - (i4s & 0x000f000f) | 0x64006400
@@ -212,9 +217,11 @@ __global__ void gemv_kernel(
                 for (int y = 0; y < kElemsPerThread; ++y)
                 {
                     *reinterpret_cast<half2*>(psum + batch_idx * NPerBlock + x * 2)
-                        = __hfma2(*reinterpret_cast<half2*>(dequantized_weight + y * NPerBlock + x * 2),
+                        = __hfma2(
+                            *reinterpret_cast<half2*>(dequantized_weight + y * NPerBlock + x * 2),
                             __half2half2(local_inputs[y]),
-                            *reinterpret_cast<half2*>(psum + batch_idx * NPerBlock + x * 2));
+                            *reinterpret_cast<half2*>(psum + batch_idx * NPerBlock + x * 2)
+                        );
                 }
             }
         }

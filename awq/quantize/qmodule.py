@@ -74,7 +74,8 @@ def pack_intweight(unpacked_qweight, interleave, kstride):
         | (Packed_Kernel[..., 1] << 4)
         | (Packed_Kernel[..., 2] << 8)
         | (Packed_Kernel[..., 3] << 12)
-    ) # 192, 12, 64
+    )
+    # 192, 12, 64
 
     Packed_Kernel = Packed_Kernel.reshape(N // interleave, K) # 192, 768
     qweight = (
